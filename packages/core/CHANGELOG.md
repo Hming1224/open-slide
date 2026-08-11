@@ -1,5 +1,13 @@
 # @open-slide/core
 
+## 1.19.0
+
+### Minor Changes
+
+- [#336](https://github.com/1weiho/open-slide/pull/336) [`dad4c24`](https://github.com/1weiho/open-slide/commit/dad4c240136a640cb5cebf1e29b1e394ab0c62de) Thanks [@ridemountainpig](https://github.com/ridemountainpig)! - Add `allowedHosts` to `open-slide.config.ts` so proxied domains (Coder, Codespaces, reverse proxies) can reach the dev and preview servers.
+
+- [#389](https://github.com/1weiho/open-slide/pull/389) [`3473db2`](https://github.com/1weiho/open-slide/commit/3473db281832aeaebcb428573d3625305a5e36e7) Thanks [@ridemountainpig](https://github.com/ridemountainpig)! - Switch between decks from the presenter window — the projection follows without leaving present mode, keeping fullscreen and the elapsed timer.
+
 ## 1.18.0
 
 ### Minor Changes
