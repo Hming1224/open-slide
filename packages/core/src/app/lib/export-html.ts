@@ -6,12 +6,32 @@ import type { SlideModule } from './sdk';
 
 type AssetEntry = { name: string; bytes: Uint8Array };
 
+export type SlideHtmlArchive = {
+  bytes: Uint8Array;
+  filename: string;
+};
+
 const ASSET_EXT_RE =
   /\.(?:png|jpe?g|gif|svg|webp|avif|mp4|webm|mov|woff2?|ttf|otf|mp3|wav|ogg)(?:\?[^#]*)?(?:#.*)?$/i;
 
 export async function exportSlideAsHtml(slide: SlideModule, slideId: string): Promise<void> {
+  const archive = await createSlideHtmlArchive(slide, slideId);
+  if (!archive) return;
+  downloadBlob(
+    new Blob([archive.bytes as BlobPart], {
+      type: archive.filename.endsWith('.zip') ? 'application/zip' : 'text/html',
+    }),
+    archive.filename,
+  );
+}
+
+export async function createSlideHtmlArchive(
+  slide: SlideModule,
+  slideId: string,
+  alwaysZip = false,
+): Promise<SlideHtmlArchive | null> {
   const pages = slide.default ?? [];
-  if (pages.length === 0) return;
+  if (pages.length === 0) return null;
   const title = slide.meta?.title ?? slideId;
 
   const pagesHtml = await renderPagesToHtml(pages);
@@ -51,9 +71,8 @@ export async function exportSlideAsHtml(slide: SlideModule, slideId: string): Pr
 
   const htmlBytes = new TextEncoder().encode(html);
 
-  if (assets.size === 0) {
-    downloadBlob(new Blob([htmlBytes as BlobPart], { type: 'text/html' }), `${slideId}.html`);
-    return;
+  if (assets.size === 0 && !alwaysZip) {
+    return { bytes: htmlBytes, filename: `${slideId}.html` };
   }
 
   const { zipSync } = await import('fflate');
@@ -65,7 +84,7 @@ export async function exportSlideAsHtml(slide: SlideModule, slideId: string): Pr
     (zipTree.assets as Record<string, Uint8Array>)[name] = bytes;
   }
   const zipped = zipSync(zipTree as Parameters<typeof zipSync>[0]);
-  downloadBlob(new Blob([zipped as BlobPart], { type: 'application/zip' }), `${slideId}.zip`);
+  return { bytes: zipped, filename: `${slideId}.zip` };
 }
 
 async function renderPagesToHtml(pages: NonNullable<SlideModule['default']>): Promise<string[]> {

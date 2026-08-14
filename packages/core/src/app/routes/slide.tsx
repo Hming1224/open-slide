@@ -7,6 +7,7 @@ import {
   FileCode2,
   FileImage,
   FileText,
+  Globe2,
   Link2,
   Loader2,
   Maximize,
@@ -56,6 +57,7 @@ import { OverviewGrid } from '../components/overview-grid';
 import { PdfProgressToast } from '../components/pdf-progress-toast';
 import { openPresenterWindow, Player } from '../components/player';
 import { PptxProgressToast } from '../components/pptx-progress-toast';
+import { PublishDialog } from '../components/publish-dialog';
 import { SlideCanvas } from '../components/slide-canvas';
 import { isDeckWarmed, markDeckWarmed, SlidePreloadLayer } from '../components/slide-preload-layer';
 import { SlideTransitionLayer } from '../components/slide-transition-layer';
@@ -94,6 +96,7 @@ export function Slide() {
   const [designOpen, setDesignOpen] = useState(false);
   const [overviewOpen, setOverviewOpen] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
+  const [publishOpen, setPublishOpen] = useState(false);
   const [, setWarmedTick] = useState(0);
   const handleAssetsWarmed = useCallback(() => {
     markDeckWarmed(slideId);
@@ -677,6 +680,20 @@ export function Slide() {
                   </span>
                 </button>
               )}
+              {view === 'slides' && import.meta.env.DEV && (
+                <button
+                  type="button"
+                  aria-label={t.slide.publish}
+                  title={t.slide.publish}
+                  className={cn(
+                    buttonVariants({ variant: 'ghost', size: 'icon-sm' }),
+                    'hidden md:inline-flex',
+                  )}
+                  onClick={() => setPublishOpen(true)}
+                >
+                  <Globe2 className="size-4" />
+                </button>
+              )}
               {view === 'slides' && allowHtmlDownload && (
                 <DropdownMenu>
                   <DropdownMenuTrigger
@@ -727,6 +744,12 @@ export function Slide() {
                       <Link2 />
                       {t.slide.copyLink}
                     </DropdownMenuItem>
+                    {import.meta.env.DEV && (
+                      <DropdownMenuItem onClick={() => setPublishOpen(true)}>
+                        <Globe2 />
+                        {t.slide.publish}
+                      </DropdownMenuItem>
+                    )}
                     {allowHtmlDownload && <DropdownMenuSeparator />}
                     {allowHtmlDownload && exportMenuItems}
                   </DropdownMenuContent>
@@ -898,6 +921,14 @@ export function Slide() {
                 onExportImagePptx: exportImagePptx,
                 onGoToPage: goTo,
               }}
+            />
+          )}
+          {import.meta.env.DEV && (
+            <PublishDialog
+              open={publishOpen}
+              onOpenChange={setPublishOpen}
+              slide={slide}
+              slideId={slideId}
             />
           )}
         </div>
