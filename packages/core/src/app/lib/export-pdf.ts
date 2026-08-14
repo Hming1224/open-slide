@@ -7,6 +7,9 @@ import type { SlideModule } from './sdk';
 
 const PRINT_ROOT_ID = 'os-print-root';
 const PRINT_STYLE_ID = 'os-print-style';
+const CAPTURE_PIXEL_RATIO = 2;
+const FIDELITY_CAPTURE_CLASS = 'os-pdf-fidelity-capture';
+const FROZEN_PROPS = ['opacity', 'transform', 'filter', 'clip-path'] as const;
 
 const PRINT_STYLES = `
 @page { size: 1920px 1080px; margin: 0; }
@@ -63,6 +66,17 @@ const PRINT_STYLES = `
     transform: scale(0.5);
     transform-origin: top left;
   }
+}
+
+#${PRINT_ROOT_ID}.${FIDELITY_CAPTURE_CLASS} *,
+#${PRINT_ROOT_ID}.${FIDELITY_CAPTURE_CLASS} *::before,
+#${PRINT_ROOT_ID}.${FIDELITY_CAPTURE_CLASS} *::after {
+  transition: none !important;
+}
+`;
+
+const VECTOR_PRINT_STYLES = `
+@media print {
   /* Chromium serializes box-shadow and CSS gradients as PDF transparency
      groups / soft masks. macOS Preview re-composites those on every page
      turn, causing 0.5–2s per-page lag. Strip them in the print container
@@ -88,12 +102,14 @@ export function isSafari(): boolean {
 
 export type PdfExportProgress = {
   phase: 'processing' | 'printing' | 'done';
-  /** Number of pages whose intro animations have finished (0..total). */
+  /** Number of pages processed so far (0..total). */
   current: number;
   total: number;
   /** 0–99 while processing, 99 during printing, 100 when done. */
   percent: number;
 };
+
+export type PdfExportMode = 'high-fidelity' | 'vector';
 
 const ANIMATION_TIMEOUT_MS = 15_000;
 const POLL_INTERVAL_MS = 100;
@@ -102,6 +118,7 @@ export async function exportSlideAsPdf(
   slide: SlideModule,
   slideId: string,
   onProgress?: (progress: PdfExportProgress) => void,
+  mode: PdfExportMode = 'high-fidelity',
 ): Promise<void> {
   const pages = slide.default ?? [];
   if (pages.length === 0) return;
@@ -110,11 +127,12 @@ export async function exportSlideAsPdf(
 
   const style = document.createElement('style');
   style.id = PRINT_STYLE_ID;
-  style.textContent = PRINT_STYLES;
+  style.textContent = mode === 'vector' ? `${PRINT_STYLES}\n${VECTOR_PRINT_STYLES}` : PRINT_STYLES;
   document.head.appendChild(style);
 
   const root = document.createElement('div');
   root.id = PRINT_ROOT_ID;
+  if (mode === 'high-fidelity') root.className = FIDELITY_CAPTURE_CLASS;
   root.setAttribute('aria-hidden', 'true');
   document.body.appendChild(root);
 
@@ -124,6 +142,7 @@ export async function exportSlideAsPdf(
 
   const reactRoots: Root[] = [];
   const frames: HTMLElement[] = [];
+  const imageUrls: string[] = [];
   for (let i = 0; i < pages.length; i++) {
     const Page = pages[i];
     if (!Page) continue;
@@ -163,18 +182,24 @@ export async function exportSlideAsPdf(
     const deadline = performance.now() + ANIMATION_TIMEOUT_MS;
     while (performance.now() < deadline) {
       const settled = frames.reduce((n, frame) => (isFrameAnimationSettled(frame) ? n + 1 : n), 0);
-      onProgress?.({
-        phase: 'processing',
-        current: settled,
-        total,
-        percent: Math.min(99, (settled / total) * 99),
-      });
+      if (mode === 'vector') {
+        onProgress?.({
+          phase: 'processing',
+          current: settled,
+          total,
+          percent: Math.min(99, (settled / total) * 99),
+        });
+      }
       if (settled === total) break;
       await sleep(POLL_INTERVAL_MS);
     }
 
     await waitForDataWaitfor(root);
-    neutralizeGradientBackgrounds(root);
+    if (mode === 'high-fidelity') {
+      imageUrls.push(...(await rasterizePrintFrames(frames, total, onProgress)));
+    } else {
+      neutralizeGradientBackgrounds(root);
+    }
     await sleep(100); // flush layout
 
     onProgress?.({ phase: 'printing', current: total, total, percent: 99 });
@@ -185,8 +210,90 @@ export async function exportSlideAsPdf(
     onProgress?.({ phase: 'done', current: total, total, percent: 100 });
     document.title = previousTitle;
     for (const r of reactRoots) r.unmount();
+    for (const url of imageUrls) URL.revokeObjectURL(url);
     root.remove();
     style.remove();
+  }
+}
+
+async function rasterizePrintFrames(
+  frames: HTMLElement[],
+  total: number,
+  onProgress?: (progress: PdfExportProgress) => void,
+): Promise<string[]> {
+  const { toBlob } = await import('html-to-image');
+  const urls: string[] = [];
+
+  try {
+    for (let i = 0; i < frames.length; i++) {
+      const frame = frames[i];
+      settleAnimationsForCapture(frame);
+      await nextPaint();
+      freezeForCapture(frame);
+      const blob = await toBlob(frame, {
+        width: 1920,
+        height: 1080,
+        pixelRatio: CAPTURE_PIXEL_RATIO,
+        backgroundColor: '#ffffff',
+        cacheBust: true,
+        skipFonts: true,
+      });
+      if (!blob) throw new Error(`failed to capture page ${i + 1}`);
+
+      const url = URL.createObjectURL(blob);
+      urls.push(url);
+      const image = document.createElement('img');
+      image.alt = '';
+      image.src = url;
+      image.style.width = '1920px';
+      image.style.height = '1080px';
+      image.style.display = 'block';
+      await image.decode();
+      frame.replaceChildren(image);
+
+      onProgress?.({
+        phase: 'processing',
+        current: i + 1,
+        total,
+        percent: Math.min(95, ((i + 1) / total) * 95),
+      });
+    }
+  } catch (error) {
+    for (const url of urls) URL.revokeObjectURL(url);
+    throw error;
+  }
+
+  return urls;
+}
+
+function settleAnimationsForCapture(root: HTMLElement): void {
+  for (const animation of document.getAnimations()) {
+    const effect = animation.effect as KeyframeEffect | null;
+    const target = effect?.target;
+    if (!target || !root.contains(target)) continue;
+
+    const timing = effect.getComputedTiming();
+    if (timing.iterations === Infinity) {
+      animation.pause();
+      continue;
+    }
+
+    try {
+      animation.finish();
+    } catch {
+      animation.pause();
+    }
+  }
+}
+
+function freezeForCapture(root: HTMLElement): void {
+  for (const el of root.querySelectorAll<HTMLElement>('*')) {
+    const styles = getComputedStyle(el);
+    for (const prop of FROZEN_PROPS) {
+      el.style.setProperty(prop, styles.getPropertyValue(prop), 'important');
+    }
+    el.style.setProperty('animation', 'none', 'important');
+    el.style.setProperty('transition', 'none', 'important');
   }
 }
 

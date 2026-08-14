@@ -61,7 +61,7 @@ import { isDeckWarmed, markDeckWarmed, SlidePreloadLayer } from '../components/s
 import { SlideTransitionLayer } from '../components/slide-transition-layer';
 import { type ThumbnailActions, ThumbnailRail } from '../components/thumbnail-rail';
 import { exportSlideAsHtml } from '../lib/export-html';
-import { exportSlideAsPdf, isSafari } from '../lib/export-pdf';
+import { exportSlideAsPdf, isSafari, type PdfExportMode } from '../lib/export-pdf';
 import { exportSlideAsImagePptx } from '../lib/export-pptx';
 import { remapNotesSessionCacheAfterReorder } from '../lib/inspector/use-notes';
 import type { SlideModule } from '../lib/sdk';
@@ -487,7 +487,7 @@ export function Slide() {
     }
   };
 
-  const exportPdf = async () => {
+  const exportPdf = async (mode: PdfExportMode = 'high-fidelity') => {
     if (!slide || exporting) return;
     if (isSafari()) {
       toast.error(t.slide.pdfExportSafariUnsupported, { duration: 5000 });
@@ -504,9 +504,17 @@ export function Slide() {
       { id: toastId, duration: Infinity },
     );
     try {
-      await exportSlideAsPdf(slide, slideId, (p) => {
-        toast.custom(() => <PdfProgressToast progress={p} />, { id: toastId, duration: Infinity });
-      });
+      await exportSlideAsPdf(
+        slide,
+        slideId,
+        (p) => {
+          toast.custom(() => <PdfProgressToast progress={p} />, {
+            id: toastId,
+            duration: Infinity,
+          });
+        },
+        mode,
+      );
     } catch (err) {
       console.error('[open-slide] pdf export failed', err);
       toast.error(t.slide.pdfExportFailed, { id: toastId, duration: 4000 });
@@ -547,9 +555,13 @@ export function Slide() {
         <FileCode2 />
         {t.slide.exportAsHtml}
       </DropdownMenuItem>
-      <DropdownMenuItem disabled={exporting} onClick={exportPdf}>
+      <DropdownMenuItem disabled={exporting} onClick={() => exportPdf()}>
         <FileText />
         {t.slide.exportAsPdf}
+      </DropdownMenuItem>
+      <DropdownMenuItem disabled={exporting} onClick={() => exportPdf('vector')}>
+        <FileText />
+        {t.slide.exportAsVectorPdf}
       </DropdownMenuItem>
       <DropdownMenuSeparator />
       <DropdownMenuItem disabled={exporting} onClick={exportImagePptx}>
@@ -881,7 +893,8 @@ export function Slide() {
                 onOverview: () => setOverviewOpen(true),
                 onToggleDesignPanel: () => setDesignOpen((v) => !v),
                 onExportHtml: exportHtml,
-                onExportPdf: exportPdf,
+                onExportPdf: () => exportPdf(),
+                onExportVectorPdf: () => exportPdf('vector'),
                 onExportImagePptx: exportImagePptx,
                 onGoToPage: goTo,
               }}

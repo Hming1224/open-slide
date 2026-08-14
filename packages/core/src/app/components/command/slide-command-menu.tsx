@@ -27,6 +27,7 @@ export type SlideCommandHandlers = {
   onToggleDesignPanel: () => void;
   onExportHtml: () => void;
   onExportPdf: () => void;
+  onExportVectorPdf: () => void;
   onExportImagePptx: () => void;
   onGoToPage: (index: number) => void;
 };
@@ -131,6 +132,14 @@ export function SlideCommandMenu({
             keywords: ['export', 'pdf', 'download', 'print'],
             disabled: exporting,
             run: handlers.onExportPdf,
+          },
+          {
+            id: 'export-vector-pdf',
+            label: t.slide.exportAsVectorPdf,
+            icon: <FileText />,
+            keywords: ['export', 'vector', 'pdf', 'download', 'print'],
+            disabled: exporting,
+            run: handlers.onExportVectorPdf,
           },
           {
             id: 'export-image-pptx',

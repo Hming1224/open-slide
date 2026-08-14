@@ -118,6 +118,7 @@ export type Locale = {
     toastCopyLinkFailed: string;
     exportAsHtml: string;
     exportAsPdf: string;
+    exportAsVectorPdf: string;
     exportAsImagePptx: string;
     exportAsPptx: string;
     comingSoon: string;
